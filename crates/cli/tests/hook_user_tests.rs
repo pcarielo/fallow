@@ -133,3 +133,34 @@ fn install_aborts_cleanly_on_corrupt_settings() {
         fallow_cli::hook_user::HookUserError::Json { .. }
     ));
 }
+
+#[test]
+fn cli_init_hook_user_invokes_install() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let home = temp.path();
+    let bin = env!("CARGO_BIN_EXE_fallow");
+
+    let status = std::process::Command::new(bin)
+        .args(["init", "--hook-user"])
+        .env("HOME", home)
+        .status()
+        .expect("spawn fallow init");
+    assert!(status.success(), "init --hook-user failed: {status}");
+    assert!(home
+        .join(".claude")
+        .join("hooks")
+        .join("fallow-stop-gate.sh")
+        .exists());
+
+    let status = std::process::Command::new(bin)
+        .args(["init", "--hook-user", "--uninstall"])
+        .env("HOME", home)
+        .status()
+        .expect("spawn fallow init uninstall");
+    assert!(status.success());
+    assert!(!home
+        .join(".claude")
+        .join("hooks")
+        .join("fallow-stop-gate.sh")
+        .exists());
+}
