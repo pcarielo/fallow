@@ -1,6 +1,7 @@
+use std::os::unix::fs::PermissionsExt;
+
 use fallow_cli::hook_user;
 
-#[ignore = "Task 12 implements install_at"]
 #[test]
 fn install_writes_script_and_settings() {
     let temp = tempfile::tempdir().expect("tempdir");
@@ -8,16 +9,37 @@ fn install_writes_script_and_settings() {
 
     hook_user::install_at(&home).expect("install ok");
 
-    let script = home
-        .join(".claude")
-        .join("hooks")
-        .join("fallow-stop-gate.sh");
+    let script = home.join(".claude").join("hooks").join("fallow-stop-gate.sh");
     assert!(script.exists(), "script not created");
 
     let settings = home.join(".claude").join("settings.json");
     let body = std::fs::read_to_string(&settings).expect("read settings");
-    assert!(
-        body.contains("fallow-stop-gate.sh"),
-        "settings missing entry"
-    );
+    assert!(body.contains("fallow-stop-gate.sh"), "settings missing entry");
+}
+
+#[test]
+fn install_creates_dirs_and_correct_mode() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let home = temp.path();
+    hook_user::install_at(home).expect("install");
+
+    let hooks_dir = home.join(".claude").join("hooks");
+    let script = hooks_dir.join("fallow-stop-gate.sh");
+    assert!(hooks_dir.is_dir());
+    let mode = std::fs::metadata(&script).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o755, "script must be 0755, got {mode:o}");
+
+    let settings_text = std::fs::read_to_string(home.join(".claude").join("settings.json")).unwrap();
+    let settings: serde_json::Value = serde_json::from_str(&settings_text).unwrap();
+    let stop_arr = settings
+        .pointer("/hooks/Stop")
+        .and_then(|v| v.as_array())
+        .expect("Stop array");
+    let any = stop_arr.iter().any(|entry| {
+        entry
+            .pointer("/hooks/0/command")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| s.contains("fallow-stop-gate.sh"))
+    });
+    assert!(any, "Stop array missing fallow-stop-gate entry: {settings_text}");
 }

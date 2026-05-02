@@ -2115,12 +2115,9 @@ fn dispatch_subcommand(command: Command, dispatch: &DispatchContext<'_>) -> Exit
             uninstall,
         } => {
             if hook_user {
-                let home = match fallow_license::user_home_dir() {
-                    Some(h) => h,
-                    None => {
-                        eprintln!("error: cannot resolve home directory");
-                        return std::process::ExitCode::from(2);
-                    }
+                let Some(home) = fallow_license::user_home_dir() else {
+                    eprintln!("error: cannot resolve home directory");
+                    return std::process::ExitCode::from(2);
                 };
                 let result = if uninstall {
                     hook_user::uninstall_at(&home)
