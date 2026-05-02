@@ -112,14 +112,28 @@ if [ -n "$MIN_VERSION" ] && [ -n "$VERSION" ]; then
 fi
 debug "binary OK: $BIN_DESC ($VERSION)"
 
+# Skip audit on mass changes. Count tracked diffs (vs HEAD) AND untracked files,
+# because AI mass-refactor often creates new files that diff HEAD does not see.
+# Submodule pointer changes count as 1 each. The rev-parse guard handles fresh
+# repos with no commits (where `diff HEAD` errors).
 MAX_DIFF="${FALLOW_HOOK_MAX_DIFF-500}"
-if command -v git >/dev/null 2>&1 && [ -d "$PROJECT_DIR/.git" ]; then
-  TOTAL_COUNT="$(git -C "$PROJECT_DIR" diff --name-only HEAD 2>/dev/null | wc -l | tr -d ' ' || echo 0)"
+case "$MAX_DIFF" in
+  ''|*[!0-9]*) MAX_DIFF=500 ;;
+esac
+
+if command -v git >/dev/null 2>&1 \
+   && [ -d "$PROJECT_DIR/.git" ] \
+   && git -C "$PROJECT_DIR" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+  DIFF_COUNT="$(git -C "$PROJECT_DIR" diff --name-only HEAD 2>/dev/null | wc -l | tr -d ' ' || echo 0)"
+  UNTRACKED_COUNT="$(git -C "$PROJECT_DIR" ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ' || echo 0)"
+  case "$DIFF_COUNT" in ''|*[!0-9]*) DIFF_COUNT=0 ;; esac
+  case "$UNTRACKED_COUNT" in ''|*[!0-9]*) UNTRACKED_COUNT=0 ;; esac
+  TOTAL_COUNT=$((DIFF_COUNT + UNTRACKED_COUNT))
   if [ "$MAX_DIFF" != "0" ] && [ "$TOTAL_COUNT" -gt "$MAX_DIFF" ]; then
-    echo "fallow-stop-gate: diff exceeds $MAX_DIFF files ($TOTAL_COUNT changed), skipping audit." >&2
+    echo "fallow-stop-gate: diff exceeds $MAX_DIFF files ($TOTAL_COUNT changed: $DIFF_COUNT tracked + $UNTRACKED_COUNT untracked), skipping audit." >&2
     exit 0
   fi
-  debug "diff size: $TOTAL_COUNT files (threshold $MAX_DIFF)"
+  debug "diff size: $TOTAL_COUNT files ($DIFF_COUNT tracked + $UNTRACKED_COUNT untracked, threshold $MAX_DIFF)"
 fi
 
 # Subsequent phases land below; for now exit 0 (fail-open default).
