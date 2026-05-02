@@ -112,5 +112,15 @@ if [ -n "$MIN_VERSION" ] && [ -n "$VERSION" ]; then
 fi
 debug "binary OK: $BIN_DESC ($VERSION)"
 
+MAX_DIFF="${FALLOW_HOOK_MAX_DIFF-500}"
+if command -v git >/dev/null 2>&1 && [ -d "$PROJECT_DIR/.git" ]; then
+  TOTAL_COUNT="$(git -C "$PROJECT_DIR" diff --name-only HEAD 2>/dev/null | wc -l | tr -d ' ' || echo 0)"
+  if [ "$MAX_DIFF" != "0" ] && [ "$TOTAL_COUNT" -gt "$MAX_DIFF" ]; then
+    echo "fallow-stop-gate: diff exceeds $MAX_DIFF files ($TOTAL_COUNT changed), skipping audit." >&2
+    exit 0
+  fi
+  debug "diff size: $TOTAL_COUNT files (threshold $MAX_DIFF)"
+fi
+
 # Subsequent phases land below; for now exit 0 (fail-open default).
 exit 0
