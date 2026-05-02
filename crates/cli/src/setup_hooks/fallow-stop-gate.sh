@@ -240,5 +240,100 @@ case "$VERDICT" in
     ;;
 esac
 
-# fail verdict handled in subsequent phase (Task 8).
+# Fall-through: VERDICT == fail
+SAME_SESSION="false"
+[ "$PREV_SESSION" = "$SESSION_ID" ] && SAME_SESSION="true"
+TS_FRESH="false"
+[ $((NOW - PREV_TS)) -lt "$TTL" ] && TS_FRESH="true"
+
+if [ "$SAME_SESSION" = "true" ] && [ "$TS_FRESH" = "true" ]; then
+  NEW_COUNT=$((PREV_COUNT + 1))
+else
+  NEW_COUNT=1
+fi
+
+build_reason_normal() {
+  local count="$1" limit="$2"
+  local changed_files dc_in cx_in du_in
+  changed_files="$(jq -r '.changed_files_count // 0' <"$TMP_JSON")"
+  dc_in="$(jq -r '.attribution.dead_code_introduced // 0' <"$TMP_JSON")"
+  cx_in="$(jq -r '.attribution.complexity_introduced // 0' <"$TMP_JSON")"
+  du_in="$(jq -r '.attribution.duplication_introduced // 0' <"$TMP_JSON")"
+
+  local issues
+  issues="$(jq -r '
+    [ (.dead_code.unused_exports // [])
+      + (.dead_code.unused_files // [])
+      + (.dead_code.unused_dependencies // [])
+      + (.health.findings // [])
+      + (.duplication.clone_groups // [])
+    | .[]
+    | select(.introduced == true)
+    | "  • " +
+        (.path // .file // "(?)") +
+        ":" +
+        ((.line // .start_line // 0) | tostring) +
+        " " +
+        (.export_name // .rule // .kind // .code // "issue") +
+        " [actions: " +
+        ((.actions // [] | map(.type) | join(", "))) +
+        "]"
+    ] | .[0:10] | join("\n")
+  ' <"$TMP_JSON" 2>/dev/null || true)"
+  local total_introduced=$((dc_in + cx_in + du_in))
+  local extra=""
+  if [ "$total_introduced" -gt 10 ]; then
+    extra=$'\n  +'"$((total_introduced - 10))"' more'
+  fi
+
+  cat <<EOF
+fallow audit verdict=fail (tentativa $count de $limit antes de bloquear consultoria)
+changed_files=$changed_files — introduced this turn:
+  dead_code: $dc_in
+  complexity: $cx_in
+  duplication: $du_in
+
+Top issues introduced:
+${issues:-  (no introduced issues parsed; rerun with --explain for actions[])}$extra
+
+Full details + actions: re-run \`fallow audit --explain --format json\` locally.
+EOF
+}
+
+build_reason_advisory() {
+  local total_introduced
+  total_introduced="$(jq -r '(.attribution.dead_code_introduced // 0) + (.attribution.complexity_introduced // 0) + (.attribution.duplication_introduced // 0)' <"$TMP_JSON")"
+  local fp
+  fp="$(jq -r '
+    [ (.dead_code.unused_exports // [])[]?
+      | select(.introduced == true)
+      | (.path // "?") + ":" + ((.line // 0) | tostring) + ":" + (.export_name // "?")
+    ] | sort | join("|")
+  ' <"$TMP_JSON" 2>/dev/null | shasum | cut -c1-12)"
+
+  cat <<EOF
+🛑 fallow audit falhou 3× consecutivas no mesmo session.
+
+Verdict atual: fail (introduced=$total_introduced).
+Estagnação detectada — pare de tentar corrigir.
+
+INSTRUÇÃO PARA CLAUDE: NÃO tente outro fix. Apresente os findings ao
+usuário, explique tentativas até agora, peça orientação antes de
+continuar editando código.
+
+Last fingerprint: $fp
+Reset automático em: novo \`pass\`/\`warn\` no audit, OU 30min idle, OU sessão Claude nova.
+EOF
+}
+
+if [ "$NEW_COUNT" -ge "$LOOP_LIMIT" ] || [ "$PREV_LOCKED" = "true" ]; then
+  REASON="$(build_reason_advisory)"
+  ADVISORY_LOCKED=true
+else
+  REASON="$(build_reason_normal "$NEW_COUNT" "$LOOP_LIMIT")"
+  ADVISORY_LOCKED=false
+fi
+
+write_state "$NEW_COUNT" fail "$ADVISORY_LOCKED"
+jq -n --arg r "$REASON" '{decision:"block", reason:$r}'
 exit 0
