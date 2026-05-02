@@ -51,5 +51,25 @@ else
   debug "ts/js edits detected: $(echo "$CHANGED_PATHS" | wc -l | tr -d ' ') file(s)"
 fi
 
+RC_DISABLED=0
+RC_PATH=""
+for rc in .fallowrc.json .fallowrc.jsonc fallow.toml .fallow.toml; do
+  if [ -f "$PROJECT_DIR/$rc" ]; then RC_PATH="$PROJECT_DIR/$rc"; break; fi
+done
+
+if [ -n "$RC_PATH" ] && [[ "$RC_PATH" == *.json* ]]; then
+  RC_DISABLED="$(jq -r '.hook.disabled // false' "$RC_PATH" 2>/dev/null || echo false)"
+  if [ "$RC_DISABLED" = "true" ]; then
+    debug "disabled by .fallowrc hook.disabled=true"
+    exit 0
+  fi
+fi
+
+if [ -z "$RC_PATH" ] && [ ! -f "$PROJECT_DIR/package.json" ]; then
+  debug "no project marker (package.json/.fallowrc absent), skipping"
+  exit 0
+fi
+debug "project marker found at $PROJECT_DIR"
+
 # Subsequent phases land below; for now exit 0 (fail-open default).
 exit 0
