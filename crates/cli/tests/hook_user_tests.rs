@@ -84,3 +84,52 @@ fn install_is_idempotent_and_preserves_other_hooks() {
         "fallow added"
     );
 }
+
+#[test]
+fn uninstall_removes_only_our_entry() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let home = temp.path();
+    let claude = home.join(".claude");
+    std::fs::create_dir_all(&claude).unwrap();
+    std::fs::write(
+        claude.join("settings.json"),
+        r#"{
+      "hooks": {
+        "Stop": [
+          {"matcher":"","hooks":[{"type":"command","command":"/usr/bin/env hookz-speaker"}]}
+        ]
+      }
+    }"#,
+    )
+    .unwrap();
+
+    fallow_cli::hook_user::install_at(home).expect("install");
+    fallow_cli::hook_user::uninstall_at(home).expect("uninstall");
+
+    let body = std::fs::read_to_string(claude.join("settings.json")).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let stop = v.pointer("/hooks/Stop").and_then(|s| s.as_array()).unwrap();
+    assert_eq!(stop.len(), 1);
+    let cmd = stop[0]
+        .pointer("/hooks/0/command")
+        .and_then(|c| c.as_str())
+        .unwrap();
+    assert!(cmd.contains("hookz-speaker"));
+
+    let script = home.join(".claude").join("hooks").join("fallow-stop-gate.sh");
+    assert!(!script.exists(), "script must be removed");
+}
+
+#[test]
+fn install_aborts_cleanly_on_corrupt_settings() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let home = temp.path();
+    let claude = home.join(".claude");
+    std::fs::create_dir_all(&claude).unwrap();
+    std::fs::write(claude.join("settings.json"), b"{ this is not json").unwrap();
+    let err = fallow_cli::hook_user::install_at(home).unwrap_err();
+    assert!(matches!(
+        err,
+        fallow_cli::hook_user::HookUserError::Json { .. }
+    ));
+}

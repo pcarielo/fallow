@@ -190,10 +190,42 @@ pub fn install_at(home: &Path) -> Result<(), HookUserError> {
 }
 
 /// Uninstall the user-scope Stop hook from `home/.claude/`.
-#[allow(
-    clippy::unimplemented,
-    reason = "Task 14 implements this; stub allows Task 11 wiring to compile"
-)]
-pub fn uninstall_at(_home: &Path) -> Result<(), HookUserError> {
-    unimplemented!("Task 14 implements this")
+pub fn uninstall_at(home: &Path) -> Result<(), HookUserError> {
+    let settings = settings_path(home);
+    if settings.exists() {
+        let mut value = load_settings(&settings)?;
+        let changed = if let Some(stop) = value
+            .pointer_mut("/hooks/Stop")
+            .and_then(|s| s.as_array_mut())
+        {
+            let before = stop.len();
+            stop.retain(|entry| {
+                let owns = entry
+                    .pointer("/hooks")
+                    .and_then(|h| h.as_array())
+                    .is_some_and(|hs| {
+                        hs.iter().any(|h| {
+                            h.get("command")
+                                .and_then(|c| c.as_str())
+                                .is_some_and(|s| s.contains("fallow-stop-gate.sh"))
+                        })
+                    });
+                !owns
+            });
+            stop.len() != before
+        } else {
+            false
+        };
+        if changed {
+            let body = serde_json::to_vec_pretty(&value).expect("serialize settings.json");
+            write_atomic(&settings, &body, 0o644)?;
+        }
+    }
+
+    let script = script_path(home);
+    if script.exists() {
+        fs::remove_file(&script).map_err(|e| io_err(&script, e))?;
+    }
+    eprintln!("✓ Uninstalled user-scope fallow-stop-gate hook.");
+    Ok(())
 }
