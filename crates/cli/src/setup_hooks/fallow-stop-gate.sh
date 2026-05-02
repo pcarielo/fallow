@@ -260,11 +260,18 @@ build_reason_normal() {
   cx_in="$(jq -r '.attribution.complexity_introduced // 0' <"$TMP_JSON")"
   du_in="$(jq -r '.attribution.duplication_introduced // 0' <"$TMP_JSON")"
 
+  # Keys consumed: dead_code.{unused_exports,unused_files,unused_dependencies,
+  # unused_types,unused_enum_members,unused_class_members}[], health.findings[],
+  # duplication.clone_groups[]. Per-item: .introduced, .path, .line,
+  # .export_name|.name|.rule|.exceeded, .actions[].type
   local issues
   issues="$(jq -r '
     [ (.dead_code.unused_exports // [])
       + (.dead_code.unused_files // [])
       + (.dead_code.unused_dependencies // [])
+      + (.dead_code.unused_types // [])
+      + (.dead_code.unused_enum_members // [])
+      + (.dead_code.unused_class_members // [])
       + (.health.findings // [])
       + (.duplication.clone_groups // [])
     | .[]
@@ -274,7 +281,7 @@ build_reason_normal() {
         ":" +
         ((.line // .start_line // 0) | tostring) +
         " " +
-        (.export_name // .rule // .kind // .code // "issue") +
+        (.export_name // .rule // .kind // .code // .name // .exceeded // "issue") +
         " [actions: " +
         ((.actions // [] | map(.type) | join(", "))) +
         "]"
