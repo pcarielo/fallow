@@ -43,3 +43,44 @@ fn install_creates_dirs_and_correct_mode() {
     });
     assert!(any, "Stop array missing fallow-stop-gate entry: {settings_text}");
 }
+
+#[test]
+fn install_is_idempotent_and_preserves_other_hooks() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let home = temp.path();
+    let claude = home.join(".claude");
+    std::fs::create_dir_all(&claude).unwrap();
+    let settings = claude.join("settings.json");
+    std::fs::write(
+        &settings,
+        r#"{
+      "hooks": {
+        "Stop": [
+          {"matcher":"","hooks":[{"type":"command","command":"/usr/bin/env hookz-speaker"}]}
+        ]
+      }
+    }"#,
+    )
+    .unwrap();
+
+    fallow_cli::hook_user::install_at(home).expect("install 1");
+    fallow_cli::hook_user::install_at(home).expect("install 2 (idempotent)");
+
+    let body = std::fs::read_to_string(&settings).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let stop = v.pointer("/hooks/Stop").and_then(|s| s.as_array()).unwrap();
+    assert_eq!(stop.len(), 2, "must have hookz + fallow-stop-gate, got {body}");
+
+    let entries: Vec<&str> = stop
+        .iter()
+        .filter_map(|e| e.pointer("/hooks/0/command").and_then(|c| c.as_str()))
+        .collect();
+    assert!(
+        entries.iter().any(|s| s.contains("hookz-speaker")),
+        "hookz preserved"
+    );
+    assert!(
+        entries.iter().any(|s| s.contains("fallow-stop-gate.sh")),
+        "fallow added"
+    );
+}
