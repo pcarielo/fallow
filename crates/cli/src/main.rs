@@ -410,7 +410,7 @@ enum Command {
         branch: Option<String>,
 
         /// Install user-scope Stop hook (writes ~/.claude/hooks + settings.json)
-        #[arg(long)]
+        #[arg(long, conflicts_with_all = ["hooks", "toml", "branch"])]
         hook_user: bool,
 
         /// With --hook-user, uninstall instead of install
@@ -2115,10 +2115,10 @@ fn dispatch_subcommand(command: Command, dispatch: &DispatchContext<'_>) -> Exit
             uninstall,
         } => {
             if hook_user {
-                let home = match std::env::var("HOME") {
-                    Ok(h) => std::path::PathBuf::from(h),
-                    Err(_) => {
-                        eprintln!("error: cannot resolve $HOME");
+                let home = match fallow_license::user_home_dir() {
+                    Some(h) => h,
+                    None => {
+                        eprintln!("error: cannot resolve home directory");
                         return std::process::ExitCode::from(2);
                     }
                 };

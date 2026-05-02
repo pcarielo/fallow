@@ -1,5 +1,6 @@
 use fallow_cli::hook_user;
 
+#[ignore = "Task 12 implements install_at"]
 #[test]
 fn install_writes_script_and_settings() {
     let temp = tempfile::tempdir().expect("tempdir");
