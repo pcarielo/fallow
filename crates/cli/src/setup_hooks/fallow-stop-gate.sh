@@ -26,5 +26,29 @@ if [ "$STOP_ACTIVE" = "true" ]; then exit 0; fi
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$HOOK_CWD}"
 if [ -z "$PROJECT_DIR" ]; then exit 0; fi
 
+debug() { [ "${FALLOW_HOOK_DEBUG:-}" = "1" ] && echo "fallow-stop-gate: $*" >&2; return 0; }
+
+if [ -z "$TRANSCRIPT_PATH" ] || [ ! -r "$TRANSCRIPT_PATH" ]; then
+  debug "transcript missing or unreadable, skipping heuristic"
+else
+  TS_EXTS_RE='\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|svelte|vue|astro)$'
+  EXCLUDE_RE='^(node_modules/|\.git/|dist/|build/|target/|\.next/|\.nuxt/|out/|coverage/)'
+  CHANGED_PATHS="$(tail -n 500 "$TRANSCRIPT_PATH" 2>/dev/null \
+    | jq -r 'select(.type=="assistant")
+             | .message.content[]?
+             | select(.type=="tool_use")
+             | select(.name=="Edit" or .name=="Write" or .name=="MultiEdit" or .name=="NotebookEdit")
+             | (.input.file_path // .input.notebook_path // empty)' 2>/dev/null \
+    | grep -Ei "$TS_EXTS_RE" \
+    | grep -Ev "$EXCLUDE_RE" \
+    | sort -u || true)"
+
+  if [ -z "$CHANGED_PATHS" ]; then
+    debug "no ts/js edits in turn, exiting"
+    exit 0
+  fi
+  debug "ts/js edits detected: $(echo "$CHANGED_PATHS" | wc -l | tr -d ' ') file(s)"
+fi
+
 # Subsequent phases land below; for now exit 0 (fail-open default).
 exit 0
