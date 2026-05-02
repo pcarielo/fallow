@@ -333,6 +333,19 @@ Reset automático em: novo \`pass\`/\`warn\` no audit, OU 30min idle, OU sessão
 EOF
 }
 
+LOG_FILE="${FALLOW_HOOK_LOG-$HOME/.claude/.fallow-hook.log}"
+log_event() {
+  if [ "${FALLOW_HOOK_DEBUG:-}" = "1" ] || [ "${FALLOW_HOOK_DRY_RUN:-}" = "1" ]; then
+    {
+      mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+      printf '%s [%s] proj=%s session=%s verdict=%s count=%s locked=%s\n' \
+        "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
+        "$([ "${FALLOW_HOOK_DRY_RUN:-}" = "1" ] && echo DRY || echo LIVE)" \
+        "$PROJECT_DIR" "$SESSION_ID" "$VERDICT" "$NEW_COUNT" "$1"
+    } >>"$LOG_FILE" 2>/dev/null || true
+  fi
+}
+
 if [ "$NEW_COUNT" -ge "$LOOP_LIMIT" ] || [ "$PREV_LOCKED" = "true" ]; then
   REASON="$(build_reason_advisory)"
   ADVISORY_LOCKED=true
@@ -342,5 +355,13 @@ else
 fi
 
 write_state "$NEW_COUNT" fail "$ADVISORY_LOCKED"
+log_event "$ADVISORY_LOCKED"
+
+if [ "${FALLOW_HOOK_DRY_RUN:-}" = "1" ]; then
+  echo "fallow-stop-gate: DRY_RUN — would block with reason:" >&2
+  echo "$REASON" >&2
+  exit 0
+fi
+
 jq -n --arg r "$REASON" '{decision:"block", reason:$r}'
 exit 0
