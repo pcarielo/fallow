@@ -26,6 +26,7 @@ mod fix;
 mod flags;
 mod health;
 mod health_types;
+mod hook_user;
 mod init;
 mod license;
 mod list;
@@ -407,6 +408,14 @@ enum Command {
         /// Fallback base branch/ref for the pre-commit hook when no upstream is set
         #[arg(long, requires = "hooks")]
         branch: Option<String>,
+
+        /// Install user-scope Stop hook (writes ~/.claude/hooks + settings.json)
+        #[arg(long)]
+        hook_user: bool,
+
+        /// With --hook-user, uninstall instead of install
+        #[arg(long, requires = "hook_user")]
+        uninstall: bool,
     },
 
     /// Install or remove fallow-managed Git and agent hooks.
@@ -2102,12 +2111,37 @@ fn dispatch_subcommand(command: Command, dispatch: &DispatchContext<'_>) -> Exit
             toml,
             hooks,
             branch,
-        } => init::run_init(&init::InitOptions {
-            root,
-            use_toml: toml,
-            hooks,
-            branch: branch.as_deref(),
-        }),
+            hook_user,
+            uninstall,
+        } => {
+            if hook_user {
+                let home = match std::env::var("HOME") {
+                    Ok(h) => std::path::PathBuf::from(h),
+                    Err(_) => {
+                        eprintln!("error: cannot resolve $HOME");
+                        return std::process::ExitCode::from(2);
+                    }
+                };
+                let result = if uninstall {
+                    hook_user::uninstall_at(&home)
+                } else {
+                    hook_user::install_at(&home)
+                };
+                return match result {
+                    Ok(()) => std::process::ExitCode::SUCCESS,
+                    Err(e) => {
+                        eprintln!("error: {e}");
+                        std::process::ExitCode::from(2)
+                    }
+                };
+            }
+            init::run_init(&init::InitOptions {
+                root,
+                use_toml: toml,
+                hooks,
+                branch: branch.as_deref(),
+            })
+        }
         Command::Hooks { subcommand } => run_hooks_command(root, subcommand, output),
         Command::Ci { subcommand } => ci::run(map_ci_subcommand(subcommand), output),
         Command::ConfigSchema => init::run_config_schema(),

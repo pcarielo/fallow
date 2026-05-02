@@ -57,6 +57,9 @@ pub mod explain;
 mod health;
 /// Health / complexity analysis report types.
 pub mod health_types;
+
+/// User-scope Stop hook installer for Claude Code.
+pub mod hook_user;
 #[allow(
     dead_code,
     unused_imports,
