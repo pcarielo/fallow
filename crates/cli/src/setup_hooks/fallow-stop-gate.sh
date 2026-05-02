@@ -136,5 +136,93 @@ if command -v git >/dev/null 2>&1 \
   debug "diff size: $TOTAL_COUNT files ($DIFF_COUNT tracked + $UNTRACKED_COUNT untracked, threshold $MAX_DIFF)"
 fi
 
-# Subsequent phases land below; for now exit 0 (fail-open default).
+TIMEOUT="${FALLOW_HOOK_TIMEOUT-120}"
+case "$TIMEOUT" in ''|*[!0-9]*) TIMEOUT=120 ;; esac
+
+STATE_DIR="${FALLOW_HOOK_STATE_DIR-$PROJECT_DIR/.claude}"
+STATE_FILE="$STATE_DIR/.fallow-hook-state.json"
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+PREV_STATE='{}'
+if [ -f "$STATE_FILE" ]; then
+  if jq -e '.' "$STATE_FILE" >/dev/null 2>&1; then
+    PREV_STATE="$(cat "$STATE_FILE")"
+  else
+    debug "state file corrupt, resetting"
+  fi
+fi
+
+PREV_SESSION="$(jq -r '.session_id // empty' <<<"$PREV_STATE" 2>/dev/null || true)"
+PREV_COUNT="$(jq -r '.fail_count // 0' <<<"$PREV_STATE" 2>/dev/null || echo 0)"
+PREV_TS="$(jq -r '.last_ts // 0' <<<"$PREV_STATE" 2>/dev/null || echo 0)"
+PREV_LOCKED="$(jq -r '.advisory_locked // false' <<<"$PREV_STATE" 2>/dev/null || echo false)"
+case "$PREV_COUNT" in ''|*[!0-9]*) PREV_COUNT=0 ;; esac
+case "$PREV_TS" in ''|*[!0-9]*) PREV_TS=0 ;; esac
+
+NOW="$(date +%s)"
+TTL="${FALLOW_HOOK_LOOP_TTL_SECS-1800}"
+case "$TTL" in ''|*[!0-9]*) TTL=1800 ;; esac
+LOOP_LIMIT="${FALLOW_HOOK_LOOP_LIMIT-3}"
+case "$LOOP_LIMIT" in ''|*[!0-9]*) LOOP_LIMIT=3 ;; esac
+
+TMP_JSON="$(mktemp)"
+TMP_ERR="$(mktemp)"
+cleanup_audit() { rm -f "$TMP_JSON" "$TMP_ERR"; }
+trap cleanup_audit EXIT
+
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_CMD=(timeout "${TIMEOUT}s")
+else
+  TIMEOUT_CMD=()
+fi
+
+if "${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}" "${RUNNER[@]}" audit --format json --quiet --explain >"$TMP_JSON" 2>"$TMP_ERR"; then
+  AUDIT_STATUS=0
+else
+  AUDIT_STATUS=$?
+fi
+
+if [ "$AUDIT_STATUS" -eq 124 ]; then
+  echo "fallow-stop-gate: fallow audit timed out after ${TIMEOUT}s, skipping." >&2
+  exit 0
+fi
+
+VERDICT="$(jq -r '.verdict // empty' <"$TMP_JSON" 2>/dev/null || true)"
+if [ -z "$VERDICT" ]; then
+  echo "fallow-stop-gate: fallow audit produced no parseable JSON, skipping." >&2
+  exit 0
+fi
+
+# Atomic state writer.
+write_state() {
+  local count="$1" verdict="$2" locked="$3"
+  local tmp
+  tmp="$(mktemp "$STATE_DIR/.state.XXXXXX")"
+  jq -n \
+    --arg s "$SESSION_ID" \
+    --argjson c "$count" \
+    --arg v "$verdict" \
+    --argjson t "$NOW" \
+    --argjson l "$locked" \
+    '{session_id:$s, fail_count:$c, last_verdict:$v, last_ts:$t, advisory_locked:$l}' \
+    > "$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" "$STATE_FILE"
+}
+
+case "$VERDICT" in
+  pass)
+    write_state 0 pass false
+    debug "verdict=pass, state reset"
+    exit 0
+    ;;
+  warn)
+    WARN_TOTAL="$(jq -r '(.summary.dead_code_issues // 0) + (.summary.complexity_findings // 0) + (.summary.duplication_clone_groups // 0)' <"$TMP_JSON" 2>/dev/null || echo "?")"
+    echo "⚠ fallow audit: $WARN_TOTAL warn findings — considere /review antes de fechar entrega." >&2
+    write_state 0 warn false
+    exit 0
+    ;;
+esac
+
+# fail verdict handled in subsequent phase (Task 8).
 exit 0
