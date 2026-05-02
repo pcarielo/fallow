@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Mock fallow binary. Behavior controlled by env vars.
+# FALLOW_MOCK_VERSION  — version string for `fallow --version` (default 2.61.0)
+# FALLOW_MOCK_OUTPUT   — file path; contents echoed for `fallow audit ...`
+# FALLOW_MOCK_EXIT     — exit code for audit (default 0)
+# FALLOW_MOCK_SLEEP    — sleep N seconds before audit returns
+case "$1" in
+  --version) echo "fallow ${FALLOW_MOCK_VERSION:-2.61.0}"; exit 0 ;;
+  audit)
+    [ -n "${FALLOW_MOCK_SLEEP:-}" ] && sleep "$FALLOW_MOCK_SLEEP"
+    if [ -n "${FALLOW_MOCK_OUTPUT:-}" ] && [ -f "${FALLOW_MOCK_OUTPUT}" ]; then
+      cat "${FALLOW_MOCK_OUTPUT}"
+    else
+      echo '{"verdict":"pass","summary":{}}'
+    fi
+    exit "${FALLOW_MOCK_EXIT:-0}" ;;
+  *) echo "mock fallow: unknown command $1" >&2; exit 2 ;;
+esac

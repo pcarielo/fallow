@@ -1,0 +1,2 @@
+{"type":"user","message":{"content":"add helper"}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/utils.ts","old_string":"x","new_string":"y"}}]}}

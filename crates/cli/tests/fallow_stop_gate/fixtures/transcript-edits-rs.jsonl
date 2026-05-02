@@ -1,0 +1,2 @@
+{"type":"user","message":{"content":"refactor rust"}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/lib.rs","old_string":"a","new_string":"b"}}]}}

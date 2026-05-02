@@ -1,0 +1,1 @@
+{"schema_version":3,"command":"audit","verdict":"warn","changed_files_count":2,"summary":{"dead_code_issues":1,"complexity_findings":0,"duplication_clone_groups":0},"attribution":{"gate":"new-only","dead_code_introduced":0,"complexity_introduced":0,"duplication_introduced":0}}
