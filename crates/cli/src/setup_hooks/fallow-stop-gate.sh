@@ -76,5 +76,34 @@ if [ -z "$RC_PATH" ] && [ ! -f "$PROJECT_DIR/package.json" ]; then
 fi
 debug "project marker found at $PROJECT_DIR"
 
+if command -v fallow >/dev/null 2>&1; then
+  RUNNER=(fallow)
+  BIN_DESC="$(command -v fallow)"
+elif command -v npx >/dev/null 2>&1 && VER_PROBE="$(npx --no-install fallow --version 2>/dev/null || true)" && [[ "$VER_PROBE" == fallow* ]]; then
+  RUNNER=(npx --no-install fallow)
+  BIN_DESC="npx --no-install fallow"
+else
+  echo "fallow-stop-gate: fallow binary not found (tried PATH and npx --no-install), skipping audit." >&2
+  exit 0
+fi
+
+VERSION_RAW="$("${RUNNER[@]}" --version 2>/dev/null || true)"
+VERSION="${VERSION_RAW#fallow }"
+VERSION="${VERSION%% *}"
+
+MIN_VERSION="${FALLOW_HOOK_MIN_VERSION-2.61.0}"
+if [ -n "$MIN_VERSION" ] && [ -n "$VERSION" ]; then
+  LOWER="$(printf '%s\n%s\n' "$MIN_VERSION" "$VERSION" | sort -V | head -n1)"
+  if [ "$LOWER" != "$MIN_VERSION" ]; then
+    {
+      echo "fallow-stop-gate: blocked: $BIN_DESC is fallow $VERSION, below required $MIN_VERSION."
+      echo "fallow-stop-gate: upgrade (npm install -g fallow@latest or cargo install fallow-cli),"
+      echo "fallow-stop-gate: or set FALLOW_HOOK_MIN_VERSION= to disable."
+    } >&2
+    exit 2
+  fi
+fi
+debug "binary OK: $BIN_DESC ($VERSION)"
+
 # Subsequent phases land below; for now exit 0 (fail-open default).
 exit 0
