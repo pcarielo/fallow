@@ -51,22 +51,27 @@ else
   debug "ts/js edits detected: $(echo "$CHANGED_PATHS" | wc -l | tr -d ' ') file(s)"
 fi
 
-RC_DISABLED=0
+# Project marker detection. Config name list mirrors CONFIG_NAMES in
+# crates/config/src/config/parsing.rs — keep in sync if that list changes.
 RC_PATH=""
 for rc in .fallowrc.json .fallowrc.jsonc fallow.toml .fallow.toml; do
   if [ -f "$PROJECT_DIR/$rc" ]; then RC_PATH="$PROJECT_DIR/$rc"; break; fi
 done
 
-if [ -n "$RC_PATH" ] && [[ "$RC_PATH" == *.json* ]]; then
-  RC_DISABLED="$(jq -r '.hook.disabled // false' "$RC_PATH" 2>/dev/null || echo false)"
-  if [ "$RC_DISABLED" = "true" ]; then
-    debug "disabled by .fallowrc hook.disabled=true"
-    exit 0
+if [ -n "$RC_PATH" ]; then
+  if [[ "$RC_PATH" == *.json || "$RC_PATH" == *.jsonc ]]; then
+    RC_DISABLED="$(jq -r '.hook.disabled // false' "$RC_PATH" 2>/dev/null || echo false)"
+    if [ "$RC_DISABLED" = "true" ]; then
+      debug "disabled by .fallowrc hook.disabled=true"
+      exit 0
+    fi
+  else
+    debug "hook.disabled not parsed for $RC_PATH (MVP: JSON only)"
   fi
 fi
 
 if [ -z "$RC_PATH" ] && [ ! -f "$PROJECT_DIR/package.json" ]; then
-  debug "no project marker (package.json/.fallowrc absent), skipping"
+  debug "no project marker (package.json/.fallowrc absent in $PROJECT_DIR), skipping"
   exit 0
 fi
 debug "project marker found at $PROJECT_DIR"
