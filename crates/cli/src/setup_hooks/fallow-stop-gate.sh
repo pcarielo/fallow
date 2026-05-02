@@ -32,9 +32,10 @@ if [ -z "$TRANSCRIPT_PATH" ] || [ ! -r "$TRANSCRIPT_PATH" ]; then
   debug "transcript missing or unreadable, skipping heuristic"
 else
   TS_EXTS_RE='\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|svelte|vue|astro)$'
-  EXCLUDE_RE='^(node_modules/|\.git/|dist/|build/|target/|\.next/|\.nuxt/|out/|coverage/)'
+  EXCLUDE_RE='(^|/)(node_modules|\.git|dist|build|target|\.next|\.nuxt|out|coverage)/'
   CHANGED_PATHS="$(tail -n 500 "$TRANSCRIPT_PATH" 2>/dev/null \
-    | jq -r 'select(.type=="assistant")
+    | jq -rR 'fromjson?
+             | select(.type=="assistant")
              | .message.content[]?
              | select(.type=="tool_use")
              | select(.name=="Edit" or .name=="Write" or .name=="MultiEdit" or .name=="NotebookEdit")
