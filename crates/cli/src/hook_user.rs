@@ -71,7 +71,9 @@ fn json_err(path: &Path, source: serde_json::Error) -> HookUserError {
 }
 
 fn write_atomic(path: &Path, body: &[u8], mode: u32) -> Result<(), HookUserError> {
-    let parent = path.parent().expect("write_atomic: path must have a parent");
+    let parent = path
+        .parent()
+        .expect("write_atomic: path must have a parent");
     fs::create_dir_all(parent).map_err(|e| io_err(parent, e))?;
     let tmp = parent.join(format!(
         ".{}.tmp",
@@ -112,16 +114,14 @@ fn load_settings(path: &Path) -> Result<serde_json::Value, HookUserError> {
 /// Insert the fallow-stop-gate Stop entry if not already present.
 /// Returns `true` if settings was modified, `false` if already installed.
 fn ensure_stop_entry(settings: &mut serde_json::Value) -> bool {
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     let obj = settings
         .as_object_mut()
         .expect("ensure_stop_entry: caller must pass an object");
     let hooks = obj
         .entry("hooks")
         .or_insert_with(|| Value::Object(Map::default()));
-    let hooks_obj = hooks
-        .as_object_mut()
-        .expect("hooks must be an object");
+    let hooks_obj = hooks.as_object_mut().expect("hooks must be an object");
     let stop = hooks_obj
         .entry("Stop")
         .or_insert_with(|| Value::Array(Vec::new()));
