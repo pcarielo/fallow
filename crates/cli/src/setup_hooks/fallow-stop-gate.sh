@@ -193,21 +193,37 @@ if [ -z "$VERDICT" ]; then
   exit 0
 fi
 
-# Atomic state writer.
+# Atomic state writer. Tolerant: if STATE_DIR is unwritable or any
+# step fails, log via debug and return 0 to preserve fail-open.
 write_state() {
   local count="$1" verdict="$2" locked="$3"
+  if [ -d "$STATE_FILE" ]; then
+    debug "state path is a directory, refusing to write"
+    return 0
+  fi
   local tmp
-  tmp="$(mktemp "$STATE_DIR/.state.XXXXXX")"
-  jq -n \
-    --arg s "$SESSION_ID" \
-    --argjson c "$count" \
-    --arg v "$verdict" \
-    --argjson t "$NOW" \
-    --argjson l "$locked" \
-    '{session_id:$s, fail_count:$c, last_verdict:$v, last_ts:$t, advisory_locked:$l}' \
-    > "$tmp"
-  chmod 600 "$tmp"
-  mv "$tmp" "$STATE_FILE"
+  tmp="$(mktemp "$STATE_DIR/.state.XXXXXX" 2>/dev/null)" || {
+    debug "could not create state tmp file in $STATE_DIR, skipping persist"
+    return 0
+  }
+  if ! jq -n \
+       --arg s "$SESSION_ID" \
+       --argjson c "$count" \
+       --arg v "$verdict" \
+       --argjson t "$NOW" \
+       --argjson l "$locked" \
+       '{session_id:$s, fail_count:$c, last_verdict:$v, last_ts:$t, advisory_locked:$l}' \
+       > "$tmp" 2>/dev/null; then
+    debug "jq failed building state JSON, skipping persist"
+    rm -f "$tmp"
+    return 0
+  fi
+  chmod 600 "$tmp" 2>/dev/null || true
+  mv "$tmp" "$STATE_FILE" 2>/dev/null || {
+    debug "atomic rename to $STATE_FILE failed"
+    rm -f "$tmp"
+    return 0
+  }
 }
 
 case "$VERDICT" in
