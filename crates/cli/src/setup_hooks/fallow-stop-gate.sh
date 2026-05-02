@@ -5,6 +5,13 @@ set -euo pipefail
 # Installer version: @@FALLOW_INSTALLER_VERSION@@
 # Stop hook for Claude Code that runs `fallow audit` after turns
 # that edited TS/JS files. Fail-open by design.
+#
+# Version floor (FALLOW_HOOK_MIN_VERSION, default 2.61.0). Set to empty
+# string to disable. Floor comparison uses `sort -V`; GNU and BSD agree
+# on plain semver but diverge on prereleases (BSD sorts `2.62.0-alpha.1`
+# ABOVE `2.62.0`, GNU below). If you set a prerelease floor explicitly,
+# verify the behavior on the target OS. See sibling fallow-gate.sh for
+# the same pattern in project-scope (commit gate) form.
 
 if [ "${FALLOW_HOOK_DISABLED:-}" = "1" ]; then exit 0; fi
 
